@@ -105,15 +105,15 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     rulesLoad();
     var kind = kindOf(inp), it = itemTxt(inp, kind), fixed = it ? ruleKey(it) : '', keys = fixed ? [fixed] : Object.keys(RU).sort(function (a, b) { return RU[a].p - RU[b].p; });
     var best = {}, isBar = !!(raw.codes && raw.codes.length);
-    var put = function (v, k, sc, tk) { var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk }; };
+    var put = function (v, k, sc, tk, kw) { var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk, weak: !kw && RU[k] && RU[k].p >= 2 }; };
     tokens(raw).forEach(function (to) {
       var tk = to.s; if (!/\d/.test(tk)) return;
       keys.forEach(function (k) {
         var R = RU[k]; if (!R) return; var TP = tplsOf(R), base = R.p * 4 + (isBar ? 0 : 1) - (to.kw ? 4 : 0);
-        if (!TP) { R.rx.forEach(function (r) { if ((fixed || !weak(r)) && r.test(tk)) put(tk, k, base - tk.length * 0.1, tk); }); return; }
+        if (!TP) { R.rx.forEach(function (r) { if ((fixed || !weak(r)) && r.test(tk)) put(tk, k, base - tk.length * 0.1, tk, to.kw || isBar); }); return; }
         TP.forEach(function (x) {
           if (!fixed && weak(x.r)) return; var L = x.t.length; if (L > tk.length || tk.length - L > 6) return;
-          for (var a = 0; a + L <= tk.length; a++) { var cut = tk.length - L; if (cut > 6) continue; var F = fit(tk.substr(a, L), x.t); if (!F) continue; F.forEach(function (f) { if (x.r.test(f[0])) put(f[0], k, f[1] * 3 + cut * 4 + base - L * 0.1, tk); }); }
+          for (var a = 0; a + L <= tk.length; a++) { var cut = tk.length - L; if (cut > 6) continue; var F = fit(tk.substr(a, L), x.t); if (!F) continue; F.forEach(function (f) { if (x.r.test(f[0])) put(f[0], k, f[1] * 3 + cut * 4 + base - L * 0.1, tk, to.kw || isBar); }); }
         });
       });
     });
@@ -156,7 +156,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     if (!L.length) { same = 0; last = ''; return false; }
     var v = L[0].v; if (v === last) same++; else { last = v; same = 1; }
     if (same < 2 && !L[0].bar) return false;
-    done = true; stop(); msg(t('pick', 'Choose the S/N')); show(L); try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) {} $('g').style.borderColor = '#34D399';
+    done = true; stop(); try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) {} $('g').style.borderColor = '#34D399';
+    if (ORIGIN && W.opener) { send(L[0].v, L[0].ik || L[0].k); return true; }
+    msg(t('pick', 'Choose the S/N')); show(L);
     return true;
   }
   function loop() {
