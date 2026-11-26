@@ -2,20 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>S/N Scan</title>
 <style>
 :root{--bg:#000;--fg:#fff;--card:#fff;--ink:#111827;--mute:#6B7280;--navy:#1E2A5A}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;-webkit-text-size-adjust:100%}
+html,body{touch-action:none;margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;-webkit-text-size-adjust:100%}
 #v{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
 #g{position:fixed;left:6%;width:88%;top:38%;height:16%;border:2px solid #fff;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
 #top{position:fixed;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
 #top b{flex:1;font-size:16px}
 #x{width:44px;height:44px;border:0;border-radius:22px;background:rgba(255,255,255,.18);color:#fff;font-size:24px;line-height:1}
-#aim{position:fixed;left:16px;right:16px;top:calc(38% - 44px);text-align:center;font-size:14px;text-shadow:0 1px 3px #000;word-break:keep-all;overflow-wrap:anywhere}
+#aim{pointer-events:none;position:fixed;left:16px;right:16px;top:calc(38% - 44px);text-align:center;font-size:14px;text-shadow:0 1px 3px #000;word-break:keep-all;overflow-wrap:anywhere}
 #lt{position:fixed;right:16px;top:calc(54% + 10px);height:36px;padding:0 14px;border:0;border-radius:18px;background:rgba(255,255,255,.85);color:#111;font:inherit;font-size:13px;display:none}
 #lt.on{background:#FDE68A}
+#zm{position:fixed;left:16px;right:16px;bottom:calc(var(--botH,120px) + 10px);display:flex;align-items:center;gap:10px;color:#fff;font-size:13px;text-shadow:0 1px 2px #000}#zm input{flex:1;accent-color:#fff;height:28px}#zm b{min-width:40px;text-align:right}
+#fc{position:fixed;width:64px;height:64px;margin:-32px 0 0 -32px;border:2px solid #FDE68A;border-radius:10px;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;transform:scale(1.25)}#fc.on{opacity:1;transform:scale(1)}
 #bot{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:var(--card);color:var(--ink);border-radius:16px 16px 0 0;min-height:56px}
 #m{font-size:14px;color:#374151;word-break:keep-all;overflow-wrap:anywhere}
 #m.w{color:#B45309}
@@ -34,8 +36,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
 <div id="top"><b id="t"></b><button id="x" type="button" aria-label="Close">&times;</button></div>
 <div id="aim"></div>
 <button id="lt" type="button"></button>
+<div id="zm"><span>1x</span><input id="zr" type="range" min="1" max="4" step="0.1" value="1" aria-label="Zoom"><b id="zv">1.0x</b></div>
+<div id="fc"></div>
 <div id="bot"><div id="m" aria-live="polite"></div><div id="c"></div><div id="n"></div></div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@1.3.4/dist/iife/reader/index.js"></script>
 <script>
 (function () {
   'use strict';
@@ -67,6 +72,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
   }
   function half(c) { var o = D.createElement('canvas'); o.width = Math.max(1, Math.round(c.width / 2)); o.height = Math.max(1, Math.round(c.height / 2)); o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o; }
   function rot(c, deg) { var r = deg * Math.PI / 180, w = c.width, h = c.height, W2 = Math.round(Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))), H2 = Math.round(Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r))), o = D.createElement('canvas'); o.width = W2; o.height = H2; var g = o.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W2, H2); g.translate(W2 / 2, H2 / 2); g.rotate(r); g.drawImage(c, -w / 2, -h / 2); return o; }
+  function smooth(c) {
+    var g = c.getContext('2d', { willReadFrequently: true }), w = c.width, h = c.height, im = g.getImageData(0, 0, w, h), d = im.data, o = new Uint8ClampedArray(d.length), x, y, k, i, s9, dx, dy;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { i = (y * w + x) * 4; for (k = 0; k < 3; k++) { s9 = 0; for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++) { var xx = x + dx < 0 ? 0 : x + dx >= w ? w - 1 : x + dx, yy = y + dy < 0 ? 0 : y + dy >= h ? h - 1 : y + dy; s9 += d[(yy * w + xx) * 4 + k]; } o[i + k] = s9 / 9; } o[i + 3] = 255; }
+    im.data.set(o); g.putImageData(im, 0, 0);
+  }
   var CF = { O: ['0'], D: ['0'], Q: ['0'], I: ['1'], L: ['1'], S: ['5', '8'], B: ['8'], Z: ['2'], G: ['6', '8'], A: ['4'], T: ['7'], '0': ['O', 'D'], '1': ['I', 'L', 'T'], '5': ['S'], '8': ['B', 'S'], '2': ['Z'], '6': ['G'], '4': ['A', 'J'], '7': ['T'] };
   function variants(s) {
     var pos = []; for (var i = 0; i < s.length && pos.length < 10; i++) if (CF[s[i]]) pos.push(i);
@@ -82,9 +92,20 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
   function weak(r) { if (r.__wk === undefined) r.__wk = !/[A-Z0-9]/.test(String(r.source).replace(/\\[dDwWsS]|\[[^\]]*\]|\{[^}]*\}|[\^$()|?*+.]/g, '')); return r.__wk; }
   function lensOf(R) { if (R.ln !== undefined) return R.ln; var lo = 99, hi = 0; for (var i = 0; i < R.rx.length; i++) { var x = rxLens(R.rx[i].source); if (!x) { R.ln = null; return null; } lo = Math.min(lo, x[0]); hi = Math.max(hi, x[1]); } R.ln = [lo, hi]; return R.ln; }
   var KW = /(^|[^A-Z])(S\s*\/?\s*N|SERIAL|SER\.?\s*N[O0])([^A-Z]|$)/, BAD = /(DATE|MANUFACTUR|MFD|MFG|ACTUATOR|LOT\b|EXP|TEL\b|FAX|PHONE|VOLT|FREQ|REF\b|POWER|FILTER)|\+\s?\d/;
+  function gs1Serial(c) {
+    var t = String(c || '').replace(/^\][A-Za-z]\d/, ''), i = 0, GS = String.fromCharCode(29);
+    for (var n = 0; n < 8 && i < t.length; n++) {
+      var ai = t.substr(i, 2);
+      if (ai === '01' || ai === '02') { i += 16; continue; }
+      if (/^1[1-7]$/.test(ai)) { i += 8; continue; }
+      if (ai === '10' || ai === '21' || ai === '22' || ai === '240') { var j = t.indexOf(GS, i + 2); var val = t.slice(i + 2, j < 0 ? t.length : j); if (ai === '21') return val.replace(/[^A-Za-z0-9]/g, '').toUpperCase(); i = j < 0 ? t.length : j + 1; continue; }
+      break;
+    }
+    return '';
+  }
   function tokens(raw) {
     var L = [], seen = {}, add = function (s, kw) { s = String(s || '').toUpperCase().replace(/[$§]/g, 'S').replace(/[^A-Z0-9]/g, ''); if (s.length < 6 || s.length > 26 || /^(19|20)\d{6}$/.test(s) || /^(.)+$/.test(s)) return; if (seen[s] != null) { if (kw > L[seen[s]].kw) L[seen[s]].kw = kw; return; } seen[s] = L.length; L.push({ s: s, kw: kw || 0 }); };
-    (raw.codes || []).forEach(function (c) { var m = /\(21\)\s*([A-Z0-9]+)/i.exec(c); if (m) add(m[1], 1); String(c).toUpperCase().split(/[^A-Z0-9]+/).forEach(function (x) { add(x, 0); }); add(c, 0); });
+    (raw.codes || []).forEach(function (c) { var m = /\(21\)\s*([A-Z0-9]+)/i.exec(c); if (m) add(m[1], 2); var g1 = gs1Serial(c); if (g1) add(g1, 2); String(c).toUpperCase().split(/[^A-Z0-9]+/).forEach(function (x) { add(x, 0); }); add(c, 0); });
     String(raw.text || '').toUpperCase().replace(/[$§]/g, 'S').split(/\n/).forEach(function (ln) {
       var kw = KW.test(ln) ? 2 : (/\(\s*21\s*\)/.test(ln) ? 1 : 0); if (!kw && BAD.test(ln)) return;
       var w = ln.split(/[^A-Z0-9]+/).filter(Boolean); w.forEach(function (x) { add(x, kw); }); for (var i = 0; i + 1 < w.length; i++) add(w[i] + w[i + 1], kw);
@@ -133,6 +154,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
   function stop() { clearTimeout(timer); timer = 0; if (stream) { try { stream.getTracks().forEach(function (k) { k.stop(); }); } catch (e) {} stream = null; } try { $('v').srcObject = null; } catch (e) {} }
   function closeMe() { done = true; stop(); try { W.close(); } catch (e) {} }
   $('x').onclick = closeMe;
+  $('zr').addEventListener('input', function () { setZoom($('zr').value); });
+  var PZ = null;  D.addEventListener('touchstart', function (e) { if (e.touches.length === 2) { var a = e.touches[0], b = e.touches[1]; PZ = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: ZOOM.z }; } }, { passive: true });
+  D.addEventListener('touchmove', function (e) { if (PZ && e.touches.length === 2) { var a = e.touches[0], b = e.touches[1], d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); setZoom(PZ.z * d / PZ.d); if (e.cancelable) e.preventDefault(); } }, { passive: false });
+  D.addEventListener('touchend', function (e) { if (e.touches.length < 2) PZ = null; }, { passive: true });
+  $('v').addEventListener('click', function (e) { focusAt(e.clientX, e.clientY); });
+  $('g').style.pointerEvents = 'none';
   D.addEventListener('visibilitychange', function () { if (D.hidden) { stop(); } else if (!done && !stream) start(); });
   function ocr() {
     if (worker) return Promise.resolve(worker); if (wp) return wp;
@@ -141,9 +168,30 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     wp.catch(function () { wp = null; }); return wp;
   }
   var BD = null; try { if (typeof W.BarcodeDetector === 'function') BD = new W.BarcodeDetector(); } catch (e) { BD = null; }
+  var ZX = W.ZXingWASM || null; try { if (ZX && ZX.setZXingModuleOverrides) ZX.setZXingModuleOverrides({ locateFile: function (pth, pre) { return /\.wasm$/.test(pth) ? 'https://cdn.jsdelivr.net/npm/zxing-wasm@1.3.4/dist/reader/' + pth : pre + pth; } }); } catch (e) {}
+  function zxRead(c) {    if (!ZX || !ZX.readBarcodesFromImageData) return Promise.resolve([]);
+    try { var id = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height); return ZX.readBarcodesFromImageData(id, { tryHarder: true, maxNumberOfSymbols: 4, formats: ['DataMatrix', 'QRCode', 'Code128', 'Code39', 'EAN-13', 'ITF', 'PDF417', 'Aztec'] }).then(function (L) { return (L || []).filter(function (x) { return x && x.isValid !== false && x.text; }).map(function (x) { return String(x.text); }); }).then(function (L) { W.__zx = (W.__zx || 0) + L.length; if (L.length) W.__zxText = L.join(' | '); return L; }, function () { return []; }); } catch (e) { return Promise.resolve([]); }
+  }
+  var READS = [];  function charVote(x0) {
+    READS.push(x0); if (READS.length > 10) READS.shift();
+    var G = READS.filter(function (r) { return r.v.length === x0.v.length && r.k === x0.k; }); if (G.length < 3) return null;
+    var out = '', ok = true; for (var i = 0; i < x0.v.length; i++) { var cnt = {}, best = '', bn = 0; G.forEach(function (r) { var ch = r.v[i]; cnt[ch] = (cnt[ch] || 0) + 1; if (cnt[ch] > bn) { bn = cnt[ch]; best = ch; } }); if (bn / G.length < 0.6) ok = false; out += best; }
+    if (!ok) return null; var L = findSn({ codes: [], text: 'SN ' + out }, null); return L.length && L[0].v === out ? L : null;
+  }
   function grab(v, crop, maxW) { var sw = v.videoWidth, sh = v.videoHeight, x = 0, y = 0, w = sw, h = sh; if (crop) { x = Math.round(sw * crop[0]); y = Math.round(sh * crop[1]); w = Math.round(sw * crop[2]); h = Math.round(sh * crop[3]); } var sc = Math.min(2.5, Math.max(1, 900 / w), (maxW || 1600) / w), c = D.createElement('canvas'); c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc)); var g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(v, x, y, w, h, 0, 0, c.width, c.height); return c; }
-  function guideCrop(v) {    var vw = v.videoWidth, vh = v.videoHeight, W0 = v.clientWidth, H0 = v.clientHeight, s = Math.max(W0 / vw, H0 / vh), ox = (W0 - vw * s) / 2, oy = (H0 - vh * s) / 2, r = $('g').getBoundingClientRect();
-    var x = (r.left - ox) / s, y = (r.top - oy) / s, w = r.width / s, h = r.height / s, padY = h * 0.6;
+  var ZOOM = { z: 1, hw: false, min: 1, max: 4, track: null };  function setZoom(z) {
+    z = Math.max(ZOOM.min, Math.min(ZOOM.max, +z || 1)); ZOOM.z = z; $('zr').value = z; $('zv').textContent = z.toFixed(1) + 'x';
+    if (ZOOM.hw && ZOOM.track) { try { ZOOM.track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) {} $('v').style.transform = ''; }
+    else $('v').style.transform = z > 1.001 ? 'scale(' + z + ')' : '';
+  }
+  function focusAt(cx, cy) {    var f = $('fc'); f.style.left = cx + 'px'; f.style.top = cy + 'px'; f.classList.add('on'); clearTimeout(f.__t); f.__t = setTimeout(function () { f.classList.remove('on'); }, 900);
+    var tr = ZOOM.track; if (!tr) return; var cap = {}; try { cap = tr.getCapabilities ? tr.getCapabilities() : {}; } catch (e) {}
+    var vr = $('v').getBoundingClientRect(), px = Math.max(0, Math.min(1, (cx - vr.left) / vr.width)), py = Math.max(0, Math.min(1, (cy - vr.top) / vr.height)), a = {};
+    if (cap.pointsOfInterest || 'pointsOfInterest' in cap) a.pointsOfInterest = [{ x: px, y: py }];
+    var fm = cap.focusMode || []; if (fm.indexOf('single-shot') >= 0) a.focusMode = 'single-shot'; else if (fm.indexOf('continuous') >= 0) a.focusMode = 'continuous';
+    if (Object.keys(a).length) { try { tr.applyConstraints({ advanced: [a] }).then(function () { if (a.focusMode === 'single-shot' && fm.indexOf('continuous') >= 0) setTimeout(function () { try { tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {} }, 1500); }, function () {}); } catch (e) {} }
+  }
+  function guideCrop(v) {    var vr = v.getBoundingClientRect(), vw = v.videoWidth, vh = v.videoHeight, W0 = vr.width, H0 = vr.height, s = Math.max(W0 / vw, H0 / vh), ox = vr.left + (W0 - vw * s) / 2, oy = vr.top + (H0 - vh * s) / 2, r = $('g').getBoundingClientRect();    var x = (r.left - ox) / s, y = (r.top - oy) / s, w = r.width / s, h = r.height / s, padY = h * 0.6;
     y -= padY; h += padY * 2; x = Math.max(0, x); y = Math.max(0, y); w = Math.min(vw - x, w); h = Math.min(vh - y, h);
     return [x / vw, y / vh, w / vw, h / vh];
   }
@@ -164,7 +212,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     if (!L.length) return false;
     var x0 = L.filter(function (x) { return !x.weak || L[0].bar; })[0]; if (!x0) return false;
     var v = x0.v; VOTES[v] = (VOTES[v] || 0) + (x0.bar ? 2 : 1); last = v;
-    if (VOTES[v] < 2) return false;
+    if (VOTES[v] < 2) { var CV = x0.bar ? null : charVote(x0); if (!CV) return false; x0 = CV[0]; v = x0.v; }
     L = [x0].concat(L.filter(function (x) { return x !== x0; }));
     done = true; stop(); try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) {} $('g').style.borderColor = '#34D399';
     if (ORIGIN && W.opener) { send(L[0].v, L[0].ik || L[0].k); return true; }
@@ -175,12 +223,13 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     if (done || !stream) return; var v = $('v'); if (!v.videoWidth) { timer = setTimeout(loop, 200); return; }
     var p = Promise.resolve([]);
     if (BD) { var f = grab(v, null, 1280); p = BD.detect(f).then(function (L) { f.width = 1; return (L || []).map(function (x) { return String(x.rawValue || ''); }).filter(Boolean); }, function () { f.width = 1; return []; }); }
+    else if (ZX && (NFR % 2 === 0)) { var f2 = grab(v, null, 1600); p = zxRead(f2).then(function (L) { f2.width = 1; return L; }, function () { f2.width = 1; return []; }); }
     p.then(function (codes) {
       if (done) return;
       if (codes.length) { var L0 = findSn({ codes: codes, text: '' }, null); if (L0.length) { L0[0].bar = 1; if (hit(L0)) return; } }
       var c = grab(v, guideCrop(v), 1800), sh = sharp(c); NFR++; SHMAX = Math.max(SHMAX * 0.97, sh); if (NFR > 3 && sh < SHMAX * 0.45) { c.width = 1; timer = setTimeout(loop, 80); return; } var br = prep(c); if (br < 45) { c.width = 1; msg(t('dark', 'Too dark'), true); timer = setTimeout(loop, 400); return; }
       if (!worker) msg(t('load', 'Preparing text reader…'));
-      return ocr().then(function (w) { return w.recognize(c); }).then(function (r) { c.width = 1; if (done) return; tries++; var txt = String(r && r.data && r.data.text || ''); var L = findSn({ codes: [], text: txt.split(/\n+/).map(function (l) { return BAD.test(l.toUpperCase()) ? l : 'SN ' + l; }).join('\n') }, null); if (hit(L)) return; msg(tries > 6 && !L.length ? t('none', 'No S/N found yet') : t('read', 'Reading…'), tries > 6 && !L.length); timer = setTimeout(loop, 60); }, function () { c.width = 1; msg(t('noocr', 'Text reader could not be loaded'), true); });
+      return ocr().then(function (w) { return w.recognize(c); }).then(function (r) { c.width = 1; if (done) return; tries++; var txt = String(r && r.data && r.data.text || ''); W.__lastTxt = txt; var L = findSn({ codes: [], text: txt.split(/\n+/).map(function (l) { return BAD.test(l.toUpperCase()) ? l : 'SN ' + l; }).join('\n') }, null); if (hit(L)) return; msg(tries > 6 && !L.length ? t('none', 'No S/N found yet') : t('read', 'Reading…'), tries > 6 && !L.length); timer = setTimeout(loop, 60); }, function () { c.width = 1; msg(t('noocr', 'Text reader could not be loaded'), true); });
     }).catch(function () { timer = setTimeout(loop, 500); });
   }
   function start() {
@@ -188,13 +237,15 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false }).then(function (s) {
       if (done) { s.getTracks().forEach(function (k) { k.stop(); }); return; }
       stream = s; var v = $('v'); v.srcObject = s; try { v.play(); } catch (e) {}
+      try { var tk = s.getVideoTracks()[0], cz = tk.getCapabilities ? tk.getCapabilities() : {}; ZOOM.track = tk; if (cz && cz.zoom && cz.zoom.max > 1) { ZOOM.hw = true; ZOOM.min = cz.zoom.min || 1; ZOOM.max = Math.min(cz.zoom.max, 10); } $('zr').min = ZOOM.min; $('zr').max = ZOOM.max; setZoom(ZOOM.min); } catch (e) {}
       try { var cap = s.getVideoTracks()[0].getCapabilities && s.getVideoTracks()[0].getCapabilities(); if (cap && cap.torch) { $('lt').style.display = 'block'; $('lt').onclick = function () { var on = !$('lt').classList.contains('on'); s.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: on }] }).then(function () { $('lt').classList.toggle('on', on); }, function () {}); }; } } catch (e) {}
+      try { D.documentElement.style.setProperty('--botH', $('bot').offsetHeight + 'px'); } catch (e) {}
       msg(t('read', 'Reading…')); timer = setTimeout(loop, 400);
     }, function () { msg(t('nocam', 'Camera not available'), true); });
   }
   if (!ORIGIN) { msg(t('noapp', 'Open this page from the Global Service app'), true); $('g').style.display = 'none'; $('aim').style.display = 'none'; }
   else { ocr().catch(function () {}); start(); }
-  W.GSScanPage = { state: function () { return { origin: ORIGIN, stream: !!stream, done: done, rules: RU ? Object.keys(RU).length : 0, it: H.it || '' }; }, find: function (txt) { return findSn({ codes: [], text: txt }, null); } };
+  W.GSScanPage = { zoom: setZoom, crop: function () { return $('v').videoWidth ? guideCrop($('v')) : null; }, state: function () { return { origin: ORIGIN, stream: !!stream, done: done, rules: RU ? Object.keys(RU).length : 0, it: H.it || '', z: ZOOM.z, hw: ZOOM.hw, zmax: ZOOM.max }; }, find: function (txt) { return findSn({ codes: [], text: txt }, null); } };
 })();
 </script>
 </body>
