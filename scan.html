@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>S/N Scan</title>
+<style>
+:root{--bg:#000;--fg:#fff;--card:#fff;--ink:#111827;--mute:#6B7280;--navy:#1E2A5A}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;-webkit-text-size-adjust:100%}
+#v{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#g{position:fixed;left:6%;width:88%;top:38%;height:16%;border:2px solid #fff;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
+#top{position:fixed;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
+#top b{flex:1;font-size:16px}
+#x{width:44px;height:44px;border:0;border-radius:22px;background:rgba(255,255,255,.18);color:#fff;font-size:24px;line-height:1}
+#aim{position:fixed;left:16px;right:16px;top:calc(38% - 44px);text-align:center;font-size:14px;text-shadow:0 1px 3px #000;word-break:keep-all;overflow-wrap:anywhere}
+#lt{position:fixed;right:16px;top:calc(54% + 10px);height:36px;padding:0 14px;border:0;border-radius:18px;background:rgba(255,255,255,.85);color:#111;font:inherit;font-size:13px;display:none}
+#lt.on{background:#FDE68A}
+#bot{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:var(--card);color:var(--ink);border-radius:16px 16px 0 0;min-height:56px}
+#m{font-size:14px;color:#374151;word-break:keep-all;overflow-wrap:anywhere}
+#m.w{color:#B45309}
+#c .r{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #E5E7EB}
+#c .r:first-child{border-top:0}
+#c .v{font-size:19px;font-weight:700;letter-spacing:.5px;word-break:break-all;display:flex;flex-direction:column}
+#c .v small{font-size:12px;font-weight:600;color:var(--mute);letter-spacing:0}
+#c button{min-height:44px;padding:0 16px;border:0;border-radius:8px;background:var(--navy);color:#fff;font:inherit;font-weight:700;white-space:nowrap;flex:none}
+#n{margin-top:6px;font-size:12px;color:var(--mute);text-align:center}
+@media (prefers-color-scheme:dark){:root{--card:#111827;--ink:#E5E7EB}#m{color:#D1D5DB}#m.w{color:#FBBF24}#c .r{border-color:#374151}}
+</style>
+</head>
+<body>
+<video id="v" playsinline muted autoplay></video>
+<div id="g"></div>
+<div id="top"><b id="t"></b><button id="x" type="button" aria-label="Close">&times;</button></div>
+<div id="aim"></div>
+<button id="lt" type="button"></button>
+<div id="bot"><div id="m" aria-live="polite"></div><div id="c"></div><div id="n"></div></div>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var D = document, W = window;
+  var H = {}; try { H = JSON.parse(decodeURIComponent(escape(atob(String(location.hash || '').slice(1).replace(/-/g, '+').replace(/_/g, '/'))))) || {}; } catch (e) { H = {}; }
+  var OK_ORIGIN = /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/;
+  var ORIGIN = OK_ORIGIN.test(String(H.o || '')) ? String(H.o) : '';
+  var TX = H.tx || {}, t = function (k, d) { return TX[k] || d; };
+  var $ = function (id) { return D.getElementById(id); };
+  D.documentElement.lang = String(H.l || 'en'); if (/^(ar|fa|he|ur)/.test(String(H.l || ''))) D.documentElement.dir = 'rtl';
+  $('t').textContent = t('title', 'Scan S/N'); $('aim').textContent = t('aim', 'Fit the S/N inside the box'); $('n').textContent = t('priv', 'Photos are not saved or sent'); $('lt').textContent = t('light', 'Light');
+  function msg(s, w) { $('m').textContent = s || ''; $('m').classList.toggle('w', !!w); }
+  function itemTxt() { return String(H.it || ''); }
+  function kindOf() { return 'x'; }
+  function ruleKey(k) { return RU && RU[k] ? k : null; }
+  function itemFor(k) { return { ko: k, d: k }; }
+  function rulesLoad() {}
+  var RU = null, RUB = false, PRI = { doc: 0, ok: 1, data: 2 };
+  var RC = null;
+  function rulesSet(o) { RC = o; var r = {}; Object.keys(o).forEach(function (k) { var a = o[k], L = []; for (var i = 1; i < a.length; i++) { try { L.push(new RegExp(a[i])); } catch (e) {} } if (L.length) r[k] = { p: PRI[a[0]] == null ? 3 : PRI[a[0]], rx: L }; }); RU = r; }
+  function prep(c) {
+    var g = c.getContext('2d', { willReadFrequently: true }), im = g.getImageData(0, 0, c.width, c.height), d = im.data, n = d.length / 4, lo = 255, hi = 0, sum = 0, i, v;
+    for (i = 0; i < d.length; i += 4) { v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; d[i] = v; sum += v; if (v < lo) lo = v; if (v > hi) hi = v; }
+    var k = hi - lo > 10 ? 255 / (hi - lo) : 1;
+    var s2 = 0; for (i = 0; i < d.length; i += 4) { v = (d[i] - lo) * k; v = v < 0 ? 0 : v > 255 ? 255 : v; d[i] = v; s2 += v; }
+    var inv = s2 / n < 110;
+    for (i = 0; i < d.length; i += 4) { v = inv ? 255 - d[i] : d[i]; d[i] = d[i + 1] = d[i + 2] = v; }
+    g.putImageData(im, 0, 0); var m = sum / n; return m < 45 && hi - lo < 90 ? m : Math.max(m, 46);
+  }
+  function half(c) { var o = D.createElement('canvas'); o.width = Math.max(1, Math.round(c.width / 2)); o.height = Math.max(1, Math.round(c.height / 2)); o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o; }
+  function rot(c, deg) { var r = deg * Math.PI / 180, w = c.width, h = c.height, W2 = Math.round(Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))), H2 = Math.round(Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r))), o = D.createElement('canvas'); o.width = W2; o.height = H2; var g = o.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W2, H2); g.translate(W2 / 2, H2 / 2); g.rotate(r); g.drawImage(c, -w / 2, -h / 2); return o; }
+  var CF = { O: ['0'], D: ['0'], Q: ['0'], I: ['1'], L: ['1'], S: ['5', '8'], B: ['8'], Z: ['2'], G: ['6', '8'], A: ['4'], T: ['7'], '0': ['O', 'D'], '1': ['I', 'L', 'T'], '5': ['S'], '8': ['B', 'S'], '2': ['Z'], '6': ['G'], '4': ['A', 'J'], '7': ['T'] };
+  function variants(s) {
+    var pos = []; for (var i = 0; i < s.length && pos.length < 10; i++) if (CF[s[i]]) pos.push(i);
+    var out = [], a = s.split('');
+    (function rec(j, c) { if (out.length > 4000) return; if (j === pos.length) { out.push([a.join(''), c]); return; } var p0 = pos[j], o = a[p0]; rec(j + 1, c); if (c < 4) CF[o].forEach(function (x) { a[p0] = x; rec(j + 1, c + 1); a[p0] = o; }); })(0, 0);
+    return out;
+  }
+  function rxLens(src) {
+    var s = String(src).replace(/^\^/, '').replace(/\$$/, ''), lo = 0, hi = 0, i = 0, one = function () { var c = s[i]; if (c === '\\') { i += 2; return [1, 1]; } if (c === '[') { i = s.indexOf(']', i) + 1; return [1, 1]; } if (c === '(') { var d = 1, j = i + 1; while (j < s.length && d) { if (s[j] === '\\') j++; else if (s[j] === '(') d++; else if (s[j] === ')') d--; j++; } var g = s.slice(i + 1, j - 1); i = j; if (/[()\[\]\\{]/.test(g)) { var L = g.split('|').map(function (x) { return rxLens('^' + x + '$'); }); if (L.some(function (x) { return !x; })) return null; return [Math.min.apply(null, L.map(function (x) { return x[0]; })), Math.max.apply(null, L.map(function (x) { return x[1]; }))]; } var A = g.split('|').map(function (x) { return x.length; }); return [Math.min.apply(null, A), Math.max.apply(null, A)]; } if (/[.*+?|]/.test(c)) return null; i++; return [1, 1]; };
+    while (i < s.length) { var u = one(); if (!u) return null; var q = /^\{(\d+)(?:,(\d+))?\}/.exec(s.slice(i)); if (q) { i += q[0].length; u = [u[0] * +q[1], u[1] * +(q[2] || q[1])]; } lo += u[0]; hi += u[1]; }
+    return [lo, hi];
+  }
+  function weak(r) { if (r.__wk === undefined) r.__wk = !/[A-Z0-9]/.test(String(r.source).replace(/\\[dDwWsS]|\[[^\]]*\]|\{[^}]*\}|[\^$()|?*+.]/g, '')); return r.__wk; }
+  function lensOf(R) { if (R.ln !== undefined) return R.ln; var lo = 99, hi = 0; for (var i = 0; i < R.rx.length; i++) { var x = rxLens(R.rx[i].source); if (!x) { R.ln = null; return null; } lo = Math.min(lo, x[0]); hi = Math.max(hi, x[1]); } R.ln = [lo, hi]; return R.ln; }
+  var KW = /(^|[^A-Z])(S\s*\/?\s*N|SERIAL|SER\.?\s*N[O0])([^A-Z]|$)/, BAD = /(DATE|MANUFACTUR|MFD|MFG|ACTUATOR|LOT\b|EXP|TEL\b|FAX|PHONE|VOLT|FREQ|REF\b|POWER|FILTER)|\+\s?\d/;
+  function tokens(raw) {
+    var L = [], seen = {}, add = function (s, kw) { s = String(s || '').toUpperCase().replace(/[$§]/g, 'S').replace(/[^A-Z0-9]/g, ''); if (s.length < 6 || s.length > 26 || /^(19|20)\d{6}$/.test(s) || /^(.)+$/.test(s)) return; if (seen[s] != null) { if (kw) L[seen[s]].kw = 1; return; } seen[s] = L.length; L.push({ s: s, kw: kw ? 1 : 0 }); };
+    (raw.codes || []).forEach(function (c) { var m = /\(21\)\s*([A-Z0-9]+)/i.exec(c); if (m) add(m[1], 1); String(c).toUpperCase().split(/[^A-Z0-9]+/).forEach(function (x) { add(x, 0); }); add(c, 0); });
+    String(raw.text || '').toUpperCase().replace(/[$§]/g, 'S').split(/\n/).forEach(function (ln) {
+      var kw = KW.test(ln) || /\(\s*21\s*\)/.test(ln); if (!kw && BAD.test(ln)) return;
+      var w = ln.split(/[^A-Z0-9]+/).filter(Boolean); w.forEach(function (x) { add(x, kw); }); for (var i = 0; i + 1 < w.length; i++) add(w[i] + w[i + 1], kw);
+    });
+    return L;
+  }
+  var DIG = '0123456789', ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  function tpl(src) {
+    var s = String(src).replace(/^\^/, '').replace(/\$$/, ''), i = 0;
+    function cls(str) { var o = '', k = 0; while (k < str.length) { var c = str[k]; if (c === '\\' && str[k + 1] === 'd') { o += DIG; k += 2; continue; } if (str[k + 1] === '-' && k + 2 < str.length) { var a = str.charCodeAt(k), b = str.charCodeAt(k + 2); for (var x = a; x <= b; x++) o += String.fromCharCode(x); k += 3; continue; } o += c; k++; } return o; }
+    function seq(end) { var alts = [[[]]], cur = alts[0]; while (i < s.length && s[i] !== end) { if (s[i] === '|') { i++; cur = [[]]; alts.push(cur); continue; } var el = atom(); if (!el) return null; var q = /^\{(\d+)(?:,(\d+))?\}/.exec(s.slice(i)), lo = 1, hi = 1; if (q) { i += q[0].length; lo = +q[1]; hi = +(q[2] || q[1]); } else if (/[*+?]/.test(s[i] || '')) return null; var nx = []; cur.forEach(function (t) { el.forEach(function (e) { for (var r = lo; r <= hi; r++) { var u = t.slice(); for (var z = 0; z < r; z++) u = u.concat(e); nx.push(u); } }); }); if (nx.length > 200) return null; cur.length = 0; Array.prototype.push.apply(cur, nx); } var out = []; alts.forEach(function (a) { Array.prototype.push.apply(out, a); }); return out; }
+    function atom() { var c = s[i]; if (c === '\\') { var d = s[i + 1]; i += 2; return d === 'd' ? [[DIG]] : [[d]]; } if (c === '[') { var j = s.indexOf(']', i); var x = cls(s.slice(i + 1, j)); i = j + 1; return [[x]]; } if (c === '(') { i++; var r = seq(')'); i++; return r; } if (/[.*+?|)]/.test(c)) return null; i++; return [[c]]; }
+    try { var r = seq(); return r && i >= s.length ? r : null; } catch (e) { return null; }
+  }
+  function tplsOf(R) { if (R.tp !== undefined) return R.tp; var L = []; for (var i = 0; i < R.rx.length; i++) { var t = tpl(R.rx[i].source); if (!t) { R.tp = null; return null; } t.forEach(function (x) { L.push({ t: x, r: R.rx[i] }); }); } R.tp = L; return L; }
+  function fit(sub, T) { var R = [['', 0]]; for (var i = 0; i < T.length; i++) { var ch = sub[i], set = T[i]; if (set.indexOf(ch) >= 0) { R.forEach(function (r) { r[0] += ch; }); continue; } var al = (CF[ch] || []).filter(function (x) { return set.indexOf(x) >= 0; }); if (!al.length) return null; var N = []; R.forEach(function (r) { al.slice(0, 2).forEach(function (x) { if (r[1] < 4 && N.length < 4) N.push([r[0] + x, r[1] + 1]); }); }); if (!N.length) return null; R = N; } return R; }
+  function findSn(raw, inp) {
+    rulesLoad();
+    var kind = kindOf(inp), it = itemTxt(inp, kind), fixed = it ? ruleKey(it) : '', keys = fixed ? [fixed] : Object.keys(RU).sort(function (a, b) { return RU[a].p - RU[b].p; });
+    var best = {}, isBar = !!(raw.codes && raw.codes.length);
+    var put = function (v, k, sc, tk) { var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk }; };
+    tokens(raw).forEach(function (to) {
+      var tk = to.s; if (!/\d/.test(tk)) return;
+      keys.forEach(function (k) {
+        var R = RU[k]; if (!R) return; var TP = tplsOf(R), base = R.p * 4 + (isBar ? 0 : 1) - (to.kw ? 4 : 0);
+        if (!TP) { R.rx.forEach(function (r) { if ((fixed || !weak(r)) && r.test(tk)) put(tk, k, base - tk.length * 0.1, tk); }); return; }
+        TP.forEach(function (x) {
+          if (!fixed && weak(x.r)) return; var L = x.t.length; if (L > tk.length || tk.length - L > 6) return;
+          for (var a = 0; a + L <= tk.length; a++) { var cut = tk.length - L; if (cut > 6) continue; var F = fit(tk.substr(a, L), x.t); if (!F) continue; F.forEach(function (f) { if (x.r.test(f[0])) put(f[0], k, f[1] * 3 + cut * 4 + base - L * 0.1, tk); }); }
+        });
+      });
+    });
+    var L = Object.keys(best).map(function (k) { return best[k]; });
+    L.forEach(function (x) { try { var o = W.GS_SNOF ? W.GS_SNOF(x.v, null, '') : null; if (o && o.src === 'hist' && o.cuKnown) { x.sc -= 20; x.hist = 1; } } catch (e) {} var f = itemFor(x.k, x.v); x.ik = f.ko; x.d = f.d; });
+    L.sort(function (a, b) { return a.sc - b.sc || b.v.length - a.v.length || a.v.localeCompare(b.v); });
+    var seen = [], top = L.length ? L[0].sc : 0;
+    var ovl = function (a, b) { for (var i = 0; i + 5 <= a.length; i++) if (b.indexOf(a.slice(i, i + 5)) >= 0) return true; return false; };
+    L = L.filter(function (x) { if (x.sc >= top + 4) return false; var dup = seen.some(function (y) { return ovl(x.v, y.v) && !(y.v.length === x.v.length && Math.abs(y.sc - x.sc) < 0.01); }); seen.push(x); return !dup; });
+    return L;
+  }
+  rulesSet(H.r && typeof H.r === 'object' ? H.r : {});
+  var stream = null, timer = 0, done = false, worker = null, wp = null, last = '', same = 0, tries = 0;
+  function stop() { clearTimeout(timer); timer = 0; if (stream) { try { stream.getTracks().forEach(function (k) { k.stop(); }); } catch (e) {} stream = null; } try { $('v').srcObject = null; } catch (e) {} }
+  function closeMe() { done = true; stop(); try { W.close(); } catch (e) {} }
+  $('x').onclick = closeMe;
+  D.addEventListener('visibilitychange', function () { if (D.hidden) { stop(); } else if (!done && !stream) start(); });
+  function ocr() {
+    if (worker) return Promise.resolve(worker); if (wp) return wp;
+    wp = Tesseract.createWorker('eng', 1, { workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js', corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1', langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int' })
+      .then(function (w) { return w.setParameters({ tessedit_pageseg_mode: '6', tessedit_do_invert: '0' }).then(function () { worker = w; return w; }); });
+    wp.catch(function () { wp = null; }); return wp;
+  }
+  var BD = null; try { if (typeof W.BarcodeDetector === 'function') BD = new W.BarcodeDetector(); } catch (e) { BD = null; }
+  function grab(v, crop, maxW) { var sw = v.videoWidth, sh = v.videoHeight, x = 0, y = 0, w = sw, h = sh; if (crop) { x = Math.round(sw * crop[0]); y = Math.round(sh * crop[1]); w = Math.round(sw * crop[2]); h = Math.round(sh * crop[3]); } var sc = Math.min(2.5, Math.max(1, 900 / w), (maxW || 1600) / w), c = D.createElement('canvas'); c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc)); var g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(v, x, y, w, h, 0, 0, c.width, c.height); return c; }
+  function guideCrop(v) {    var vw = v.videoWidth, vh = v.videoHeight, W0 = v.clientWidth, H0 = v.clientHeight, s = Math.max(W0 / vw, H0 / vh), ox = (W0 - vw * s) / 2, oy = (H0 - vh * s) / 2, r = $('g').getBoundingClientRect();
+    var x = (r.left - ox) / s, y = (r.top - oy) / s, w = r.width / s, h = r.height / s, padY = h * 0.6;
+    y -= padY; h += padY * 2; x = Math.max(0, x); y = Math.max(0, y); w = Math.min(vw - x, w); h = Math.min(vh - y, h);
+    return [x / vw, y / vh, w / vw, h / vh];
+  }
+  function show(L) {
+    var c = $('c'); c.innerHTML = '';
+    L.slice(0, 3).forEach(function (x) { var r = D.createElement('div'); r.className = 'r'; var v = D.createElement('span'); v.className = 'v'; v.textContent = x.v; if (x.k) { var s = D.createElement('small'); s.textContent = x.k; v.appendChild(s); } var b = D.createElement('button'); b.type = 'button'; b.textContent = t('put', 'Use this value'); b.onclick = function () { send(x.v, x.ik || x.k); }; r.appendChild(v); r.appendChild(b); c.appendChild(r); });
+  }
+  function send(sn, k) {
+    if (ORIGIN && W.opener) { try { W.opener.postMessage({ type: 'gs-sn', sn: String(sn), k: String(k || ''), id: String(H.id || '') }, ORIGIN); } catch (e) {} }
+    closeMe();
+  }
+  function hit(L) {
+    if (!L.length) { same = 0; last = ''; return false; }
+    var v = L[0].v; if (v === last) same++; else { last = v; same = 1; }
+    if (same < 2 && !L[0].bar) return false;
+    done = true; stop(); msg(t('pick', 'Choose the S/N')); show(L); try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) {} $('g').style.borderColor = '#34D399';
+    return true;
+  }
+  function loop() {
+    if (done || !stream) return; var v = $('v'); if (!v.videoWidth) { timer = setTimeout(loop, 200); return; }
+    var p = Promise.resolve([]);
+    if (BD) { var f = grab(v, null, 1280); p = BD.detect(f).then(function (L) { f.width = 1; return (L || []).map(function (x) { return String(x.rawValue || ''); }).filter(Boolean); }, function () { f.width = 1; return []; }); }
+    p.then(function (codes) {
+      if (done) return;
+      if (codes.length) { var L0 = findSn({ codes: codes, text: '' }, null); if (L0.length) { L0[0].bar = 1; if (hit(L0)) return; } }
+      var c = grab(v, guideCrop(v), 1400), br = prep(c); if (br < 45) { c.width = 1; msg(t('dark', 'Too dark'), true); timer = setTimeout(loop, 400); return; }
+      if (!worker) msg(t('load', 'Preparing text reader…'));
+      return ocr().then(function (w) { return w.recognize(c); }).then(function (r) { c.width = 1; if (done) return; tries++; var txt = String(r && r.data && r.data.text || ''); var L = findSn({ codes: [], text: txt.split(/\n+/).map(function (l) { return BAD.test(l.toUpperCase()) ? l : 'SN ' + l; }).join('\n') }, null); if (hit(L)) return; msg(tries > 6 && !L.length ? t('none', 'No S/N found yet') : t('read', 'Reading…'), tries > 6 && !L.length); timer = setTimeout(loop, 60); }, function () { c.width = 1; msg(t('noocr', 'Text reader could not be loaded'), true); });
+    }).catch(function () { timer = setTimeout(loop, 500); });
+  }
+  function start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg(t('nocam', 'Camera not available'), true); return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }).then(function (s) {
+      if (done) { s.getTracks().forEach(function (k) { k.stop(); }); return; }
+      stream = s; var v = $('v'); v.srcObject = s; try { v.play(); } catch (e) {}
+      try { var cap = s.getVideoTracks()[0].getCapabilities && s.getVideoTracks()[0].getCapabilities(); if (cap && cap.torch) { $('lt').style.display = 'block'; $('lt').onclick = function () { var on = !$('lt').classList.contains('on'); s.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: on }] }).then(function () { $('lt').classList.toggle('on', on); }, function () {}); }; } } catch (e) {}
+      msg(t('read', 'Reading…')); timer = setTimeout(loop, 400);
+    }, function () { msg(t('nocam', 'Camera not available'), true); });
+  }
+  if (!ORIGIN) { msg(t('noapp', 'Open this page from the Global Service app'), true); $('g').style.display = 'none'; $('aim').style.display = 'none'; }
+  else { ocr().catch(function () {}); start(); }
+  W.GSScanPage = { state: function () { return { origin: ORIGIN, stream: !!stream, done: done, rules: RU ? Object.keys(RU).length : 0, it: H.it || '' }; }, find: function (txt) { return findSn({ codes: [], text: txt }, null); } };
+})();
+</script>
+</body>
+</html>
