@@ -72,12 +72,18 @@ html,body{touch-action:none;margin:0;height:100%;background:var(--bg);color:var(
   }
   function half(c) { var o = D.createElement('canvas'); o.width = Math.max(1, Math.round(c.width / 2)); o.height = Math.max(1, Math.round(c.height / 2)); o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o; }
   function rot(c, deg) { var r = deg * Math.PI / 180, w = c.width, h = c.height, W2 = Math.round(Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))), H2 = Math.round(Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r))), o = D.createElement('canvas'); o.width = W2; o.height = H2; var g = o.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W2, H2); g.translate(W2 / 2, H2 / 2); g.rotate(r); g.drawImage(c, -w / 2, -h / 2); return o; }
+  function sideways(c) {
+    try { var w = 240, h = Math.max(8, Math.round(c.height * w / c.width)), t = D.createElement('canvas'); t.width = w; t.height = h; var g = t.getContext('2d', { willReadFrequently: true }); g.drawImage(c, 0, 0, w, h);
+      var d = g.getImageData(0, 0, w, h).data, R = new Float64Array(h), C = new Float64Array(w), x, y, i, e; for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) { i = (y * w + x) * 4; e = Math.abs(d[i + 4] - d[i - 4]) + Math.abs(d[i + w * 4] - d[i - w * 4]); R[y] += e; C[x] += e; } t.width = 1;
+      var cv = function (A) { var m = 0, v = 0, k; for (k = 0; k < A.length; k++) m += A[k]; m /= A.length || 1; for (k = 0; k < A.length; k++) v += (A[k] - m) * (A[k] - m); return m ? v / A.length / (m * m) : 0; };
+      return cv(C) > cv(R) * 1.3; } catch (e) { return false; }
+  }
   function smooth(c) {
     var g = c.getContext('2d', { willReadFrequently: true }), w = c.width, h = c.height, im = g.getImageData(0, 0, w, h), d = im.data, o = new Uint8ClampedArray(d.length), x, y, k, i, s9, dx, dy;
     for (y = 0; y < h; y++) for (x = 0; x < w; x++) { i = (y * w + x) * 4; for (k = 0; k < 3; k++) { s9 = 0; for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++) { var xx = x + dx < 0 ? 0 : x + dx >= w ? w - 1 : x + dx, yy = y + dy < 0 ? 0 : y + dy >= h ? h - 1 : y + dy; s9 += d[(yy * w + xx) * 4 + k]; } o[i + k] = s9 / 9; } o[i + 3] = 255; }
     im.data.set(o); g.putImageData(im, 0, 0);
   }
-  var CF = { O: ['0'], D: ['0'], Q: ['0'], I: ['1'], L: ['1'], S: ['5', '8'], B: ['8'], Z: ['2'], G: ['6', '8'], A: ['4'], T: ['7'], '0': ['O', 'D'], '1': ['I', 'L', 'T'], '5': ['S'], '8': ['B', 'S'], '2': ['Z'], '6': ['G'], '4': ['A', 'J'], '7': ['T'] };
+  var CF = { O: ['0'], D: ['0'], Q: ['0'], I: ['1'], L: ['1'], S: ['5', '8'], B: ['8'], Z: ['2'], G: ['6', '8'], A: ['4', 'R'], T: ['7'], '0': ['O', 'D'], '1': ['I', 'L', 'T', '3'], '5': ['S'], '8': ['B', 'S'], '2': ['Z'], '6': ['G'], '4': ['A', 'J'], '7': ['T'] };
   function variants(s) {
     var pos = []; for (var i = 0; i < s.length && pos.length < 10; i++) if (CF[s[i]]) pos.push(i);
     var out = [], a = s.split('');
@@ -141,7 +147,13 @@ html,body{touch-action:none;margin:0;height:100%;background:var(--bg);color:var(
       });
     });
     var L = Object.keys(best).map(function (k) { return best[k]; });
+    if (!fixed) L.slice().forEach(function (x) {
+      var R0 = RU[x.k]; if (!R0 || R0.p < 2) return;
+      keys.forEach(function (k) { var R = RU[k]; if (!R || R.p > 1) return; (tplsOf(R) || []).forEach(function (tp) { if (tp.t.length !== x.v.length || weak(tp.r)) return; var o = '', lit = 0, ok = true; for (var i = 0; i < tp.t.length && ok; i++) { var ch = x.v[i], set = tp.t[i]; if (set.indexOf(ch) >= 0) { o += ch; continue; } var al = (CF[ch] || []).filter(function (y) { return set.indexOf(y) >= 0; })[0]; if (al) { o += al; lit += 0.5; continue; } if (set.length === 1) { o += set; lit += 1.5; continue; } ok = false; } if (ok && lit <= 3 && tp.r.test(o) && !best[o]) { var y = { v: o, k: k, sc: x.sc - 2 + lit, tk: x.tk, weak: false, kws: x.kws, near: 1 }; best[o] = y; L.push(y); } }); });
+    });
     L.forEach(function (x) { try { var o = W.GS_SNOF ? W.GS_SNOF(x.v, null, '') : null; if (o && o.src === 'hist' && o.cuKnown) { x.sc -= 20; x.hist = 1; } } catch (e) {} var f = itemFor(x.k, x.v); x.ik = f.ko; x.d = f.d; });
+    var DT = [], dm, drx = /(20\d{2})\s*[.\-\/]\s*(\d{1,2})\b/g, dtx = String(raw.text || ''); while ((dm = drx.exec(dtx))) DT.push([dm[1].slice(2), ('0' + dm[2]).slice(-2)]);
+    if (DT.length && L.length > 1) L.forEach(function (x) { var v = x.v; if (DT.some(function (d) { var ml = 'ABCDEFGHIJKL'.charAt(+d[1] - 1); return (ml && v.indexOf(d[0] + ml) >= 0) || v.indexOf(d[0] + d[1]) >= 0; })) x.sc -= 1.5; });
     L.sort(function (a, b) { return a.sc - b.sc || b.v.length - a.v.length || a.v.localeCompare(b.v); });
     L = L.filter(function (x) { return !L.some(function (y) { return y !== x && y.v.length > x.v.length && y.v.indexOf(x.v.slice(0, Math.max(6, x.v.length - 2))) === 0 && y.sc <= x.sc + 6; }); });
     var seen = [], top = L.length ? L[0].sc : 0;
