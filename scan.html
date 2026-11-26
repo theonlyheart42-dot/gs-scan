@@ -83,10 +83,10 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
   function lensOf(R) { if (R.ln !== undefined) return R.ln; var lo = 99, hi = 0; for (var i = 0; i < R.rx.length; i++) { var x = rxLens(R.rx[i].source); if (!x) { R.ln = null; return null; } lo = Math.min(lo, x[0]); hi = Math.max(hi, x[1]); } R.ln = [lo, hi]; return R.ln; }
   var KW = /(^|[^A-Z])(S\s*\/?\s*N|SERIAL|SER\.?\s*N[O0])([^A-Z]|$)/, BAD = /(DATE|MANUFACTUR|MFD|MFG|ACTUATOR|LOT\b|EXP|TEL\b|FAX|PHONE|VOLT|FREQ|REF\b|POWER|FILTER)|\+\s?\d/;
   function tokens(raw) {
-    var L = [], seen = {}, add = function (s, kw) { s = String(s || '').toUpperCase().replace(/[$§]/g, 'S').replace(/[^A-Z0-9]/g, ''); if (s.length < 6 || s.length > 26 || /^(19|20)\d{6}$/.test(s) || /^(.)+$/.test(s)) return; if (seen[s] != null) { if (kw) L[seen[s]].kw = 1; return; } seen[s] = L.length; L.push({ s: s, kw: kw ? 1 : 0 }); };
+    var L = [], seen = {}, add = function (s, kw) { s = String(s || '').toUpperCase().replace(/[$§]/g, 'S').replace(/[^A-Z0-9]/g, ''); if (s.length < 6 || s.length > 26 || /^(19|20)\d{6}$/.test(s) || /^(.)+$/.test(s)) return; if (seen[s] != null) { if (kw > L[seen[s]].kw) L[seen[s]].kw = kw; return; } seen[s] = L.length; L.push({ s: s, kw: kw || 0 }); };
     (raw.codes || []).forEach(function (c) { var m = /\(21\)\s*([A-Z0-9]+)/i.exec(c); if (m) add(m[1], 1); String(c).toUpperCase().split(/[^A-Z0-9]+/).forEach(function (x) { add(x, 0); }); add(c, 0); });
     String(raw.text || '').toUpperCase().replace(/[$§]/g, 'S').split(/\n/).forEach(function (ln) {
-      var kw = KW.test(ln) || /\(\s*21\s*\)/.test(ln); if (!kw && BAD.test(ln)) return;
+      var kw = KW.test(ln) ? 2 : (/\(\s*21\s*\)/.test(ln) ? 1 : 0); if (!kw && BAD.test(ln)) return;
       var w = ln.split(/[^A-Z0-9]+/).filter(Boolean); w.forEach(function (x) { add(x, kw); }); for (var i = 0; i + 1 < w.length; i++) add(w[i] + w[i + 1], kw);
     });
     return L;
@@ -101,32 +101,35 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
   }
   function tplsOf(R) { if (R.tp !== undefined) return R.tp; var L = []; for (var i = 0; i < R.rx.length; i++) { var t = tpl(R.rx[i].source); if (!t) { R.tp = null; return null; } t.forEach(function (x) { L.push({ t: x, r: R.rx[i] }); }); } R.tp = L; return L; }
   function fit(sub, T) { var R = [['', 0]]; for (var i = 0; i < T.length; i++) { var ch = sub[i], set = T[i]; if (set.indexOf(ch) >= 0) { R.forEach(function (r) { r[0] += ch; }); continue; } var al = (CF[ch] || []).filter(function (x) { return set.indexOf(x) >= 0; }); if (!al.length) return null; var N = []; R.forEach(function (r) { al.slice(0, 2).forEach(function (x) { if (r[1] < 4 && N.length < 4) N.push([r[0] + x, r[1] + 1]); }); }); if (!N.length) return null; R = N; } return R; }
+  var PRE = /^(SERIALNUMBER|SERIALNO|SERIAL|SNO|SN|NO|21)$/;
+  function cutOk(tk, a, L, bar) { if (a === 0 && a + L === tk.length) return true; if (bar) return true; var pre = tk.slice(0, a), suf = tk.slice(a + L); if (suf.length) return false; return PRE.test(pre); }
   function findSn(raw, inp) {
     rulesLoad();
     var kind = kindOf(inp), it = itemTxt(inp, kind), fixed = it ? ruleKey(it) : '', keys = fixed ? [fixed] : Object.keys(RU).sort(function (a, b) { return RU[a].p - RU[b].p; });
     var best = {}, isBar = !!(raw.codes && raw.codes.length);
-    var put = function (v, k, sc, tk, kw) { var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk, weak: !kw && RU[k] && RU[k].p >= 2 }; };
+    var put = function (v, k, sc, tk, kw) { var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk, weak: !kw && RU[k] && RU[k].p >= 2, kws: kw === true ? 2 : (kw || 0) }; };
     tokens(raw).forEach(function (to) {
       var tk = to.s; if (!/\d/.test(tk)) return;
       keys.forEach(function (k) {
         var R = RU[k]; if (!R) return; var TP = tplsOf(R), base = R.p * 4 + (isBar ? 0 : 1) - (to.kw ? 4 : 0);
-        if (!TP) { R.rx.forEach(function (r) { if ((fixed || !weak(r)) && r.test(tk)) put(tk, k, base - tk.length * 0.1, tk, to.kw || isBar); }); return; }
+        if (!TP) { R.rx.forEach(function (r) { if ((fixed || !weak(r)) && r.test(tk)) put(tk, k, base - tk.length * 0.1, tk, isBar ? 2 : to.kw); }); return; }
         TP.forEach(function (x) {
           if (!fixed && weak(x.r)) return; var L = x.t.length; if (L > tk.length || tk.length - L > 6) return;
-          for (var a = 0; a + L <= tk.length; a++) { var cut = tk.length - L; if (cut > 6) continue; var F = fit(tk.substr(a, L), x.t); if (!F) continue; F.forEach(function (f) { if (x.r.test(f[0])) put(f[0], k, f[1] * 3 + cut * 4 + base - L * 0.1, tk, to.kw || isBar); }); }
+          for (var a = 0; a + L <= tk.length; a++) { var cut = tk.length - L; if (cut > 6) continue; if (!cutOk(tk, a, L, isBar)) continue; var F = fit(tk.substr(a, L), x.t); if (!F) continue; F.forEach(function (f) { if (x.r.test(f[0])) put(f[0], k, f[1] * 3 + cut * 4 + base - L * 0.1, tk, isBar ? 2 : to.kw); }); }
         });
       });
     });
     var L = Object.keys(best).map(function (k) { return best[k]; });
     L.forEach(function (x) { try { var o = W.GS_SNOF ? W.GS_SNOF(x.v, null, '') : null; if (o && o.src === 'hist' && o.cuKnown) { x.sc -= 20; x.hist = 1; } } catch (e) {} var f = itemFor(x.k, x.v); x.ik = f.ko; x.d = f.d; });
     L.sort(function (a, b) { return a.sc - b.sc || b.v.length - a.v.length || a.v.localeCompare(b.v); });
+    L = L.filter(function (x) { return !L.some(function (y) { return y !== x && y.v.length > x.v.length && y.v.indexOf(x.v.slice(0, Math.max(6, x.v.length - 2))) === 0 && y.sc <= x.sc + 6; }); });
     var seen = [], top = L.length ? L[0].sc : 0;
     var ovl = function (a, b) { for (var i = 0; i + 5 <= a.length; i++) if (b.indexOf(a.slice(i, i + 5)) >= 0) return true; return false; };
     L = L.filter(function (x) { if (x.sc >= top + 4) return false; var dup = seen.some(function (y) { return ovl(x.v, y.v) && !(y.v.length === x.v.length && Math.abs(y.sc - x.sc) < 0.01); }); seen.push(x); return !dup; });
     return L;
   }
   rulesSet(H.r && typeof H.r === 'object' ? H.r : {});
-  var stream = null, timer = 0, done = false, worker = null, wp = null, last = '', same = 0, tries = 0;
+  var stream = null, timer = 0, done = false, worker = null, wp = null, last = '', same = 0, tries = 0, VOTES = {}, SHMAX = 0, NFR = 0;
   function stop() { clearTimeout(timer); timer = 0; if (stream) { try { stream.getTracks().forEach(function (k) { k.stop(); }); } catch (e) {} stream = null; } try { $('v').srcObject = null; } catch (e) {} }
   function closeMe() { done = true; stop(); try { W.close(); } catch (e) {} }
   $('x').onclick = closeMe;
@@ -144,6 +147,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     y -= padY; h += padY * 2; x = Math.max(0, x); y = Math.max(0, y); w = Math.min(vw - x, w); h = Math.min(vh - y, h);
     return [x / vw, y / vh, w / vw, h / vh];
   }
+  function sharp(c) {
+    var w = 160, h = Math.max(8, Math.round(c.height * w / c.width)), t = D.createElement('canvas'); t.width = w; t.height = h; var g = t.getContext('2d', { willReadFrequently: true }); g.drawImage(c, 0, 0, w, h);
+    var d = g.getImageData(0, 0, w, h).data, s = 0, n = 0, y, x, i, v; for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) { i = (y * w + x) * 4; v = 4 * d[i] - d[i - 4] - d[i + 4] - d[i - w * 4] - d[i + w * 4]; s += v * v; n++; }
+    t.width = 1; return n ? s / n : 0;
+  }
   function show(L) {
     var c = $('c'); c.innerHTML = '';
     L.slice(0, 3).forEach(function (x) { var r = D.createElement('div'); r.className = 'r'; var v = D.createElement('span'); v.className = 'v'; v.textContent = x.v; if (x.k) { var s = D.createElement('small'); s.textContent = x.k; v.appendChild(s); } var b = D.createElement('button'); b.type = 'button'; b.textContent = t('put', 'Use this value'); b.onclick = function () { send(x.v, x.ik || x.k); }; r.appendChild(v); r.appendChild(b); c.appendChild(r); });
@@ -153,9 +161,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     closeMe();
   }
   function hit(L) {
-    if (!L.length) { same = 0; last = ''; return false; }
-    var v = L[0].v; if (v === last) same++; else { last = v; same = 1; }
-    if (same < 2 && !L[0].bar) return false;
+    if (!L.length) return false;
+    var x0 = L.filter(function (x) { return !x.weak || L[0].bar; })[0]; if (!x0) return false;
+    var v = x0.v; VOTES[v] = (VOTES[v] || 0) + (x0.bar ? 2 : 1); last = v;
+    if (VOTES[v] < 2) return false;
+    L = [x0].concat(L.filter(function (x) { return x !== x0; }));
     done = true; stop(); try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) {} $('g').style.borderColor = '#34D399';
     if (ORIGIN && W.opener) { send(L[0].v, L[0].ik || L[0].k); return true; }
     msg(t('pick', 'Choose the S/N')); show(L);
@@ -168,14 +178,14 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.
     p.then(function (codes) {
       if (done) return;
       if (codes.length) { var L0 = findSn({ codes: codes, text: '' }, null); if (L0.length) { L0[0].bar = 1; if (hit(L0)) return; } }
-      var c = grab(v, guideCrop(v), 1400), br = prep(c); if (br < 45) { c.width = 1; msg(t('dark', 'Too dark'), true); timer = setTimeout(loop, 400); return; }
+      var c = grab(v, guideCrop(v), 1800), sh = sharp(c); NFR++; SHMAX = Math.max(SHMAX * 0.97, sh); if (NFR > 3 && sh < SHMAX * 0.45) { c.width = 1; timer = setTimeout(loop, 80); return; } var br = prep(c); if (br < 45) { c.width = 1; msg(t('dark', 'Too dark'), true); timer = setTimeout(loop, 400); return; }
       if (!worker) msg(t('load', 'Preparing text reader…'));
       return ocr().then(function (w) { return w.recognize(c); }).then(function (r) { c.width = 1; if (done) return; tries++; var txt = String(r && r.data && r.data.text || ''); var L = findSn({ codes: [], text: txt.split(/\n+/).map(function (l) { return BAD.test(l.toUpperCase()) ? l : 'SN ' + l; }).join('\n') }, null); if (hit(L)) return; msg(tries > 6 && !L.length ? t('none', 'No S/N found yet') : t('read', 'Reading…'), tries > 6 && !L.length); timer = setTimeout(loop, 60); }, function () { c.width = 1; msg(t('noocr', 'Text reader could not be loaded'), true); });
     }).catch(function () { timer = setTimeout(loop, 500); });
   }
   function start() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg(t('nocam', 'Camera not available'), true); return; }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }).then(function (s) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false }).then(function (s) {
       if (done) { s.getTracks().forEach(function (k) { k.stop(); }); return; }
       stream = s; var v = $('v'); v.srcObject = s; try { v.play(); } catch (e) {}
       try { var cap = s.getVideoTracks()[0].getCapabilities && s.getVideoTracks()[0].getCapabilities(); if (cap && cap.torch) { $('lt').style.display = 'block'; $('lt').onclick = function () { var on = !$('lt').classList.contains('on'); s.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: on }] }).then(function () { $('lt').classList.toggle('on', on); }, function () {}); }; } } catch (e) {}
