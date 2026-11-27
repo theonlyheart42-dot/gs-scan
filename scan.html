@@ -130,11 +130,15 @@ html,body{touch-action:none;margin:0;height:100%;background:var(--bg);color:var(
   function fit(sub, T) { var R = [['', 0]]; for (var i = 0; i < T.length; i++) { var ch = sub[i], set = T[i]; if (set.indexOf(ch) >= 0) { R.forEach(function (r) { r[0] += ch; }); continue; } var al = (CF[ch] || []).filter(function (x) { return set.indexOf(x) >= 0; }); if (!al.length) return null; var N = []; R.forEach(function (r) { al.slice(0, 2).forEach(function (x) { if (r[1] < 4 && N.length < 4) N.push([r[0] + x, r[1] + 1]); }); }); if (!N.length) return null; R = N; } return R; }
   var PRE = /^(SERIALNUMBER|SERIALNO|SERIAL|SNO|SN|NO|21)$/;
   function cutOk(tk, a, L, bar) { if (a === 0 && a + L === tk.length) return true; if (bar) return true; var pre = tk.slice(0, a), suf = tk.slice(a + L); if (suf.length) return false; return PRE.test(pre); }
+  function ymOk(v) {
+    var m = /^(T[12]S?D?[WRB]?|N1)(\d\d)(\d\d)\d{2,4}$/.exec(v); if (!m) return true;
+    var y = +m[2], mo = +m[3], cy = new Date().getFullYear() % 100; return mo >= 1 && mo <= 12 && y >= 10 && y <= cy + 1;
+  }
   function findSn(raw, inp) {
     rulesLoad();
     var kind = kindOf(inp), it = itemTxt(inp, kind), fixed = it ? ruleKey(it) : '', keys = fixed ? [fixed] : Object.keys(RU).sort(function (a, b) { return RU[a].p - RU[b].p; });
     var best = {}, isBar = !!(raw.codes && raw.codes.length);
-    var put = function (v, k, sc, tk, kw) { var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk, weak: !kw && RU[k] && RU[k].p >= 2, kws: kw === true ? 2 : (kw || 0) }; };
+    var put = function (v, k, sc, tk, kw) { if (!ymOk(v)) return; var o = best[v]; if (!o || sc < o.sc) best[v] = { v: v, k: k, sc: sc, tk: tk, weak: !kw && RU[k] && RU[k].p >= 2, kws: kw === true ? 2 : (kw || 0) }; };
     tokens(raw).forEach(function (to) {
       var tk = to.s; if (!/\d/.test(tk)) return;
       keys.forEach(function (k) {
@@ -162,7 +166,12 @@ html,body{touch-action:none;margin:0;height:100%;background:var(--bg);color:var(
     return L;
   }
   rulesSet(H.r && typeof H.r === 'object' ? H.r : {});
-  var stream = null, timer = 0, done = false, worker = null, wp = null, last = '', same = 0, tries = 0, VOTES = {}, SHMAX = 0, NFR = 0;
+  var stream = null, timer = 0, done = false, worker = null, wp = null, last = '', same = 0, tries = 0, VOTES = {}, SHMAX = 0, NFR = 0, ROI = null;  function grabSc(v, cr, sc) { var sw = v.videoWidth, sh = v.videoHeight, x = Math.max(0, Math.round(sw * cr[0])), y = Math.max(0, Math.round(sh * cr[1])), w = Math.min(sw - x, Math.round(sw * cr[2])), h = Math.min(sh - y, Math.round(sh * cr[3])), c = D.createElement('canvas'); c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc)); var g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(v, x, y, w, h, 0, 0, c.width, c.height); return c; }
+  function roiOf(r, cr, cw, ch, L) {    if (!L.length) return null; var v0 = L[0].v, best = null;
+    (((r && r.data) || {}).blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (pg) { (pg.lines || []).forEach(function (l) { if (best || !l || !l.bbox) return; var f = findSn({ codes: [], text: 'SN ' + String(l.text || '') }, null); if (f.some(function (x) { return x.v === v0; })) best = l.bbox; }); }); });
+    if (!best) return null; var lh = Math.max(4, best.y1 - best.y0), y0 = Math.max(0, best.y0 - lh * 0.9), y1 = Math.min(ch, best.y1 + lh * 0.9);
+    return { cr: [cr[0], cr[1] + cr[3] * y0 / ch, cr[2], cr[3] * (y1 - y0) / ch], lh: cr[3] * lh / ch, n: 0 };
+  }
   function stop() { clearTimeout(timer); timer = 0; if (stream) { try { stream.getTracks().forEach(function (k) { k.stop(); }); } catch (e) {} stream = null; } try { $('v').srcObject = null; } catch (e) {} }
   function closeMe() { done = true; stop(); try { W.close(); } catch (e) {} }
   $('x').onclick = closeMe;
@@ -239,9 +248,17 @@ html,body{touch-action:none;margin:0;height:100%;background:var(--bg);color:var(
     p.then(function (codes) {
       if (done) return;
       if (codes.length) { var L0 = findSn({ codes: codes, text: '' }, null); if (L0.length) { L0[0].bar = 1; if (hit(L0)) return; } }
-      var c = grab(v, guideCrop(v), 1800), sh = sharp(c); NFR++; SHMAX = Math.max(SHMAX * 0.97, sh); if (NFR > 3 && sh < SHMAX * 0.45) { c.width = 1; timer = setTimeout(loop, 80); return; } var br = prep(c); if (br < 45) { c.width = 1; msg(t('dark', 'Too dark'), true); timer = setTimeout(loop, 400); return; }
+      var RO = ROI && ROI.n < 6 ? ROI : null; if (!RO) ROI = null;
+      var cr = RO ? RO.cr : guideCrop(v), c, sh;
+      if (RO) { RO.n++; c = grabSc(v, cr, Math.max(1, Math.min(3, 44 / Math.max(1, RO.lh * v.videoHeight)))); }
+      else { c = grab(v, cr, 1800); sh = sharp(c); NFR++; SHMAX = Math.max(SHMAX * 0.97, sh); if (NFR > 3 && sh < SHMAX * 0.45) { c.width = 1; timer = setTimeout(loop, 80); return; } }
+      var br = prep(c); if (br < 45) { c.width = 1; msg(t('dark', 'Too dark'), true); timer = setTimeout(loop, 400); return; }
       if (!worker) msg(t('load', 'Preparing text reader…'));
-      return ocr().then(function (w) { return w.recognize(c); }).then(function (r) { c.width = 1; if (done) return; tries++; var txt = String(r && r.data && r.data.text || ''); W.__lastTxt = txt; var L = findSn({ codes: [], text: txt.split(/\n+/).map(function (l) { return BAD.test(l.toUpperCase()) ? l : 'SN ' + l; }).join('\n') }, null); if (hit(L)) return; msg(tries > 6 && !L.length ? t('none', 'No S/N found yet') : t('read', 'Reading…'), tries > 6 && !L.length); timer = setTimeout(loop, 60); }, function () { c.width = 1; msg(t('noocr', 'Text reader could not be loaded'), true); });
+      var cw = c.width, ch = c.height;
+      return ocr().then(function (w) { return w.recognize(c, {}, { text: true, blocks: !RO }); }).then(function (r) { c.width = 1; if (done) return; tries++; var txt = String(r && r.data && r.data.text || ''); W.__lastTxt = txt; var L = findSn({ codes: [], text: txt.split(/\n+/).map(function (l) { return BAD.test(l.toUpperCase()) ? l : 'SN ' + l; }).join('\n') }, null);
+        if (!itemTxt()) { var KS = {}; findSn({ codes: [], text: txt }, null).forEach(function (x) { if (x.kws === 2) KS[x.v] = 1; }); L = L.filter(function (x) { return !RU[x.k] || RU[x.k].p < 2 || KS[x.v]; }); }
+        if (RO) { if (!L.length) { RO.miss = (RO.miss || 0) + 1; if (RO.miss >= 2) ROI = null; } } else { var nr = roiOf(r, cr, cw, ch, L.filter(function (x) { return !x.weak; })); if (nr) ROI = nr; }
+        if (hit(L)) return; msg(tries > 6 && !L.length ? t('none', 'No S/N found yet') : t('read', 'Reading…'), tries > 6 && !L.length); timer = setTimeout(loop, 60); }, function () { c.width = 1; msg(t('noocr', 'Text reader could not be loaded'), true); });
     }).catch(function () { timer = setTimeout(loop, 500); });
   }
   function start() {
